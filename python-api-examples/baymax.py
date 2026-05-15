@@ -4,9 +4,6 @@ import time
 import numpy as np
 import sherpa_onnx
 import sounddevice as sd
-from pathlib import Path
-import logging
-import librosa
 import soundfile as sf
 import re
 import gc  # for manual memory cleaning
