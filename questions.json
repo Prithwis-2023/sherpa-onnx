@@ -1,0 +1,44 @@
+[
+  {
+    "id": 1,
+    "question": "What is the name of the red fruit that is used to make cider and is very crunchy?",
+    "answer": "apple",
+    "hint": "Snow White ate a poisoned version of this."
+  },
+  {
+    "id": 2,
+    "question": "한국어 문제입니다. 노란색이고 긴 과일은 무엇일까요?",
+    "answer": "바나나",
+    "hint": "원숭이가 가장 좋아하는 과일입니다."
+  },
+  {
+    "id": 3,
+    "question": "What common embedded component is used to rotate a shaft to a specific angle, often used in robot arms?",
+    "answer": "servo",
+    "hint": "It starts with an 'S' and uses PWM for control."
+  },
+  {
+    "id": 4,
+    "question": "교통 문제입니다. 길을 건널 때 무엇을 보고 건너야 하나요?",
+    "answer": "신호등",
+    "hint": "빨간색, 노란색, 초록색 불이 있습니다."
+  },
+  {
+    "id": 5,
+    "question": "This fruit is small, round, and can be purple or green. It is used to make wine.",
+    "answer": "grape",
+    "hint": "They grow in bunches on a vine."
+  },
+  {
+    "id": 6,
+    "question": "컴퓨터 문제입니다. 데이터를 저장하는 장치로 'USB' 뒤에 붙는 단어는 무엇인가요?",
+    "answer": "메모리",
+    "hint": "기억을 뜻하는 영어 단어입니다."
+  },
+  {
+    "id": 7,
+    "question": "What is the name of the central campus building where students usually go for administrative tasks or major ceremonies?",
+    "answer": "daeyang hall",
+    "hint": "It is a famous landmark known for its traditional architecture."
+  }
+]  

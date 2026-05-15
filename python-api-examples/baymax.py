@@ -10,6 +10,8 @@ import librosa
 import soundfile as sf
 import re
 import gc  # for manual memory cleaning
+import json
+import os
 
 # global state for tts playback
 tts_queue = queue.Queue()
@@ -21,6 +23,14 @@ tts_killed = False   # set to true once exited
 # global state for the current active tts
 current_tts = None
 active_lang = None  # 'en' or 'ko'
+
+tts_en = None
+tts_ko = None
+is_speaking = False  # global flag to prevent Baymax from hearing its own echo
+baymax_asks = True
+
+first_byte_time = 0
+
 
 # configuration
 # wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
@@ -68,9 +78,6 @@ SUPERTONIC_VOICE_STYLE = "./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/voice.b
 WHISPER_ENCODER = "./sherpa-onnx-whisper-tiny/tiny-encoder.int8.onnx"
 WHISPER_DECODER = "./sherpa-onnx-whisper-tiny/tiny-decoder.int8.onnx"
 
-tts_en = None
-tts_ko = None
-is_speaking = False  # global flag to prevent Baymax from hearing its own echo
 
 def resample_audio(samples, original_sr, target_sr = 24000):
     """Resample audio to the target sample rate if needed."""
@@ -95,14 +102,14 @@ def resample_audio(samples, original_sr, target_sr = 24000):
 
 # Initialization Functions
 
-def create_recognizer():
+def create_recognizer(language):
     """Setup for ASR. We are using SenseVoice"""
     return sherpa_onnx.OfflineRecognizer.from_sense_voice(
         model = ASR_MODEL,
         tokens = ASR_TOKENS,
         num_threads = 3,
         use_itn = True,
-        language = "", # one out of "zh", "en", "ja", "ko", "yue"
+        language = language, # one out of "zh", "en", "ja", "ko", "yue"
         debug=False,
         hr_rule_fsts = "",
         hr_lexicon = "",
@@ -224,8 +231,6 @@ def swap_tts_model(target_lang):
     return current_tts
 
 
-first_byte_time = 0
-
 # TTS Callbacks
 
 def generated_audio_callback(samples: np.ndarray, progress: float):
@@ -297,6 +302,7 @@ def play_audio(sample_rate):
     
 
 def baymax_say(text, reference_audio):
+    """This function consists of the regex spoken language identification and tts component"""
     global active_lang, is_speaking, tts_queue, tts_event, tts_started, tts_stopped, tts_en, tts_ko
 
     # identifying the spoken language
@@ -356,27 +362,34 @@ def baymax_say(text, reference_audio):
     # reset state
     is_speaking = False
 
-    #buffer = np.array([], dtype = np.float32)
 
-
+def load_questions(filepath):
+    """This function loads the quiz questions json file"""
+    if os.path.exists(filepath):
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    else:
+        print("File not found. Exiting...")
+        return
 
 
 def main():
-    global tts_started, tts_stopped, tts_event, first_byte_time, active_lang, tts_en, tts_ko, is_speaking
+    global tts_started, tts_stopped, tts_event, first_byte_time, active_lang, tts_en, tts_ko, is_speaking, baymax_asks
 
     print("Initializing Baymax Systems...")
-    recognizer = create_recognizer()
+    #recognizer = create_recognizer()
     denoiser = create_speech_denoiser()
     #slid = whisper_multilingual()
     #tts = create_kokoro_tts()
     tts_en = create_pocket_tts()
     tts_ko = create_supertonic_tts()
+    reference_wav = "./sherpa-onnx-pocket-tts-int8-2026-01-26/test_wavs/bria.wav"
+    QUIZ_QUESTIONS = load_questions("./questions.json")
+    current_q_id = 0
 
     print(f"DEBUG: {tts_en.sample_rate}, {tts_ko.sample_rate}")
 
     print("Pre-loading reference voice...")
-    reference_wav = "./sherpa-onnx-pocket-tts-int8-2026-01-26/test_wavs/bria.wav"
-                            
     reference_audio_raw, reference_sample_rate = sf.read(reference_wav)
     if reference_sample_rate != tts_en.sample_rate:
         reference_audio = resample_audio(reference_audio_raw, reference_sample_rate, tts_en.sample_rate)
@@ -407,66 +420,76 @@ def main():
     #texts = []
 
     with sd.InputStream(channels = 1, dtype = "float32", samplerate = mic_sample_rate) as s:
-        while True:
-            samples, overflowed = s.read(samples_per_read)
+        while baymax_asks:
+            # Ask the question once
+            question = QUIZ_QUESTIONS[current_q_id]["question"]
+            baymax_say(question, reference_audio)
             
-            if is_speaking:
-                # if baymax is speaking we discard the audio immediately
-                # to prevent processing any echo
-                continue
+            buffer = np.array([], dtype = np.float32)
+            time.sleep(0.5)  # Wait for audio to fully finish playing
             
-            if overflowed:
-                # if the pi was too slow, the mic buffer will overflow
-                # we must skip this to catch up
-                continue
+            if active_lang == "en":
+                recognizer = create_recognizer("en")
+            else:
+                recognizer = create_recognizer("ko")
+
+            print("Listening for answer...")
+            answer_received = False
             
-            samples = samples.reshape(-1)
-            samples = resample_audio(samples, mic_sample_rate, 16000)
-            #samples = samples.flatten()[::3]
-            # frame_shift = denoiser.frame_shift_in_samples
-            # Denoised = []
+            # Listen for answer until received
+            while not answer_received:
+                samples, overflowed = s.read(samples_per_read)
 
-            # for start in range(0, len(samples), frame_shift):
-            #     chunk = samples[start : start + frame_shift]
-            #     denoised = denoiser(chunk, 16000)
-            #     Denoised.append(np.array(denoised.samples, dtype = np.float32))
+                if overflowed:
+                    continue
+                
+                samples = samples.reshape(-1)
+                samples = resample_audio(samples, mic_sample_rate, 16000)
 
-            # Denoised.append(np.asarray(denoiser.flush().samples, dtype = np.float32))
+                # add to VAD
+                buffer = np.concatenate([buffer, samples])
+                while len(buffer) > window_size:
+                    vad.accept_waveform(buffer[:window_size])
+                    buffer = buffer[window_size:]
 
-            # add to VAD
-            buffer = np.concatenate([buffer, samples])
-            while len(buffer) > window_size:
-                vad.accept_waveform(buffer[:window_size])
-                buffer = buffer[window_size:]
+                if not vad.empty():
+                    # drain the VAD queue and keep the last one
+                    latest_segment = None
+                    while not vad.empty():
+                        latest_segment = vad.front
+                        vad.pop()
 
-            if not vad.empty():
-                # drain the VAD queue and keep the last one
-                latest_segment = None
-                while not vad.empty():
-                    latest_segment = vad.front
-                    vad.pop()
+                    if latest_segment and len(latest_segment.samples) > 8000:
+                        raw_speech = latest_segment.samples
+                        clean_speech = denoiser(raw_speech, 16000).samples
 
-                if latest_segment and len(latest_segment.samples) > 8000:
-                    raw_speech = latest_segment.samples
-                    clean_speech = denoiser(raw_speech, 16000).samples
-                    #clean_speech = raw_speech
+                        # Transcribe
+                        asr_stream = recognizer.create_stream()
+                        asr_stream.accept_waveform(16000, clean_speech)
+                        recognizer.decode_stream(asr_stream)
 
-                    # Transcribe
-                    asr_stream = recognizer.create_stream()
-                    asr_stream.accept_waveform(16000, clean_speech)
-                    recognizer.decode_stream(asr_stream)
+                        reply = asr_stream.result.text.strip().lower()
 
-                    # Identify Language
-                    # slid_stream = slid.create_stream()
-                    # slid_stream.accept_waveform(sample_rate = 16000, waveform = clean_speech)
-                    # lang = slid.compute(slid_stream)
+                        if len(reply) >= 1:
+                            print(f"User: {reply}")
+                            
+                            if QUIZ_QUESTIONS[current_q_id]["answer"] in reply:
+                                baymax_say(f"That's correct! Moving on.", reference_audio)
+                                current_q_id += 1
+                                answer_received = True
+                                buffer = np.array([], dtype = np.float32)
+                                time.sleep(0.2)
+                            else:
+                                baymax_say(f"Incorrect! Here is a hint: {QUIZ_QUESTIONS[current_q_id]['hint']}", reference_audio)
+                                buffer = np.array([], dtype = np.float32)
+                                time.sleep(0.2)
+                                print("Listening for answer...")
+            
+            if current_q_id >= len(QUIZ_QUESTIONS):
+                baymax_asks = False
+            
 
-                    text = asr_stream.result.text.strip().lower()
-                    if len(text) > 1:
-                        print(f"User: {text}")
-                        baymax_say(text, reference_audio)
-
-                buffer = np.array([], dtype = np.float32)
+            
 
 
 if __name__ == "__main__":
