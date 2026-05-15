@@ -74,11 +74,11 @@ graph TD
     
     AM -->|Resume| U
     
-    style A fill:#90EE90
-    style H fill:#87CEEB
-    style T fill:#FFB6C1
-    style AG fill:#DDA0DD
-    style AJ fill:#FFD700
+    style A fill:#2E7D32,color:#fff
+    style H fill:#1565C0,color:#fff
+    style T fill:#C2185B,color:#fff
+    style AG fill:#6A1B9A,color:#fff
+    style AJ fill:#F57C00,color:#fff
 ```
 
 ## Component Overview
