@@ -296,6 +296,71 @@ def play_audio(sample_rate):
             time.sleep(0.1)  # keeping the thread alive
     
 
+def baymax_say(text, reference_audio):
+    global active_lang, is_speaking, tts_queue, tts_event, tts_started, tts_stopped, tts_en, tts_ko
+
+    # identifying the spoken language
+    if bool(re.search('[가-힣]', text)):
+        lang = "ko"
+    elif bool(re.search('[A-Za-z]', text)):
+        lang = "en"
+    else:
+        lang = "en"  # default to English if no language detected
+
+    active_lang = lang
+
+    is_speaking = True  # set the speaker state
+
+    while not tts_queue.empty(): tts_queue.get()
+    tts_event.clear()
+    tts_started = False
+    tts_stopped = False
+    start_trigger = time.time()
+    
+    # OPTIMIZATION: We run generation in a thread (non-blocking)
+    def run_tts(tts_text, target_lang):
+        """ This function triggers audio callback"""
+        global tts_stopped
+        
+        # swapping the model only if necessary
+        #tts_engine = swap_tts_model(target_lang)
+
+        gen_config = sherpa_onnx.GenerationConfig()
+        
+        if target_lang == "ko":
+            gen_config.sid = 1   # female speaker
+            gen_config.num_steps = 12
+            gen_config.extra["lang"] = "ko"
+            tts_ko.generate(tts_text, gen_config, callback = generated_audio_callback)
+        else:
+            gen_config.reference_audio = reference_audio # Required for Pocket-TTS
+            gen_config.reference_sample_rate = tts_en.sample_rate #reference_sample_rate
+            gen_config.num_steps = 5
+            tts_en.generate(text, gen_config, callback = generated_audio_callback)
+        
+        tts_stopped = True # signaling the callback that generation is done
+    
+    threading.Thread(target = run_tts, args = (text, lang), daemon = True).start()
+    
+    while not tts_started and not tts_stopped:
+        time.sleep(0.01)
+
+    # Statistics for tuning
+    print(f"Time to FIRST sound: {first_byte_time - start_trigger}")
+    #print(f"Full sentence generation: {full_gen_end - start_trigger}")
+
+    # wait for baymax to finish speaking before listening again
+    # this prevents the mic from picking up the speakers
+    tts_event.wait()
+
+    # reset state
+    is_speaking = False
+
+    #buffer = np.array([], dtype = np.float32)
+
+
+
+
 def main():
     global tts_started, tts_stopped, tts_event, first_byte_time, active_lang, tts_en, tts_ko, is_speaking
 
@@ -398,70 +463,10 @@ def main():
 
                     text = asr_stream.result.text.strip().lower()
                     if len(text) > 1:
-                        #idx = len(texts)
-                        #texts.append(text)
-                    
-                        # identifying the spoken language
-                        if bool(re.search('[가-힣]', text)):
-                            lang = "ko"
-                        elif bool(re.search('[A-Za-z]', text)):
-                            lang = "en"
-                        else:
-                            continue
-                        active_lang = lang
-
                         print(f"User: {text}")
-                        print(lang)
-                        print("Thinking...")
+                        baymax_say(text, reference_audio)
 
-                        is_speaking = True  # set the speaker state
-
-                        while not tts_queue.empty(): tts_queue.get()
-                        tts_event.clear()
-                        tts_started = False
-                        tts_stopped = False
-                        start_trigger = time.time()
-                        
-                        # OPTIMIZATION: We run generation in a thread (non-blocking)
-                        def run_tts(tts_text, target_lang):
-                            """ This function triggers audio callback"""
-                            global tts_stopped
-                            
-                            # swapping the model only if necessary
-                            #tts_engine = swap_tts_model(target_lang)
-
-                            gen_config = sherpa_onnx.GenerationConfig()
-                            
-                            if target_lang == "ko":
-                                gen_config.sid = 1   # female speaker
-                                gen_config.num_steps = 12
-                                gen_config.extra["lang"] = "ko"
-                                tts_ko.generate(tts_text, gen_config, callback = generated_audio_callback)
-                            else:
-                                gen_config.reference_audio = reference_audio # Required for Pocket-TTS
-                                gen_config.reference_sample_rate = tts_en.sample_rate #reference_sample_rate
-                                gen_config.num_steps = 5
-                                tts_en.generate(text, gen_config, callback = generated_audio_callback)
-                            
-                            tts_stopped = True # signaling the callback that generation is done
-                        
-                        threading.Thread(target = run_tts, args = (text, lang), daemon = True).start()
-                        
-                        while not tts_started and not tts_stopped:
-                            time.sleep(0.01)
-
-                        # Statistics for tuning
-                        print(f"Time to FIRST sound: {first_byte_time - start_trigger}")
-                        #print(f"Full sentence generation: {full_gen_end - start_trigger}")
-
-                        # wait for baymax to finish speaking before listening again
-                        # this prevents the mic from picking up the speakers
-                        tts_event.wait()
-
-                        # reset state
-                        is_speaking = False
-
-                        buffer = np.array([], dtype = np.float32)
+                buffer = np.array([], dtype = np.float32)
 
 
 if __name__ == "__main__":
