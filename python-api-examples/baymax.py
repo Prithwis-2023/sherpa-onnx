@@ -35,6 +35,10 @@ first_byte_time = 0
 # configuration
 # wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
 VAD_MODEL = "./silero_vad.onnx"
+
+#curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2
+#tar xvf sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2
+#rm sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2
 ASR_MODEL = "./sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx"
 ASR_TOKENS = "./sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt"
 
@@ -301,7 +305,7 @@ def play_audio(sample_rate):
             time.sleep(0.1)  # keeping the thread alive
     
 
-def baymax_say(text, reference_audio):
+def baymax_say(text, reference_audio, stream):
     """This function consists of the regex spoken language identification and tts component"""
     global active_lang, is_speaking, tts_queue, tts_event, tts_started, tts_stopped, tts_en, tts_ko
 
@@ -317,47 +321,53 @@ def baymax_say(text, reference_audio):
 
     is_speaking = True  # set the speaker state
 
-    while not tts_queue.empty(): tts_queue.get()
-    tts_event.clear()
-    tts_started = False
-    tts_stopped = False
-    start_trigger = time.time()
-    
-    # OPTIMIZATION: We run generation in a thread (non-blocking)
-    def run_tts(tts_text, target_lang):
-        """ This function triggers audio callback"""
-        global tts_stopped
-        
-        # swapping the model only if necessary
-        #tts_engine = swap_tts_model(target_lang)
+    stream.stop() # pause the microphone capture
 
-        gen_config = sherpa_onnx.GenerationConfig()
+    try:
+        while not tts_queue.empty(): tts_queue.get()
+        tts_event.clear()
+        tts_started = False
+        tts_stopped = False
+        start_trigger = time.time()
         
-        if target_lang == "ko":
-            gen_config.sid = 1   # female speaker
-            gen_config.num_steps = 12
-            gen_config.extra["lang"] = "ko"
-            tts_ko.generate(tts_text, gen_config, callback = generated_audio_callback)
-        else:
-            gen_config.reference_audio = reference_audio # Required for Pocket-TTS
-            gen_config.reference_sample_rate = tts_en.sample_rate #reference_sample_rate
-            gen_config.num_steps = 5
-            tts_en.generate(text, gen_config, callback = generated_audio_callback)
+        # OPTIMIZATION: We run generation in a thread (non-blocking)
+        def run_tts(tts_text, target_lang):
+            """ This function triggers audio callback"""
+            global tts_stopped
+            
+            # swapping the model only if necessary
+            #tts_engine = swap_tts_model(target_lang)
+
+            gen_config = sherpa_onnx.GenerationConfig()
+            
+            if target_lang == "ko":
+                gen_config.sid = 1   # female speaker
+                gen_config.num_steps = 12
+                gen_config.extra["lang"] = "ko"
+                tts_ko.generate(tts_text, gen_config, callback = generated_audio_callback)
+            else:
+                gen_config.reference_audio = reference_audio # Required for Pocket-TTS
+                gen_config.reference_sample_rate = tts_en.sample_rate #reference_sample_rate
+                gen_config.num_steps = 5
+                tts_en.generate(text, gen_config, callback = generated_audio_callback)
+            
+            tts_stopped = True # signaling the callback that generation is done
         
-        tts_stopped = True # signaling the callback that generation is done
-    
-    threading.Thread(target = run_tts, args = (text, lang), daemon = True).start()
-    
-    while not tts_started and not tts_stopped:
-        time.sleep(0.01)
+        threading.Thread(target = run_tts, args = (text, lang), daemon = True).start()
+        
+        while not tts_started and not tts_stopped:
+            time.sleep(0.01)
 
-    # Statistics for tuning
-    print(f"Time to FIRST sound: {first_byte_time - start_trigger}")
-    #print(f"Full sentence generation: {full_gen_end - start_trigger}")
+        # Statistics for tuning
+        print(f"Time to FIRST sound: {first_byte_time - start_trigger}")
+        #print(f"Full sentence generation: {full_gen_end - start_trigger}")
 
-    # wait for baymax to finish speaking before listening again
-    # this prevents the mic from picking up the speakers
-    tts_event.wait()
+        # wait for baymax to finish speaking before listening again
+        # this prevents the mic from picking up the speakers
+        tts_event.wait()
+
+    finally:
+        stream.start()  # resume microphone capture
 
     # reset state
     is_speaking = False
@@ -377,12 +387,16 @@ def main():
     global tts_started, tts_stopped, tts_event, first_byte_time, active_lang, tts_en, tts_ko, is_speaking, baymax_asks
 
     print("Initializing Baymax Systems...")
-    #recognizer = create_recognizer()
+
     denoiser = create_speech_denoiser()
     #slid = whisper_multilingual()
     #tts = create_kokoro_tts()
     tts_en = create_pocket_tts()
     tts_ko = create_supertonic_tts()
+
+    recognizer_en = create_recognizer("en")
+    recognizer_ko = create_recognizer("ko")
+
     reference_wav = "./sherpa-onnx-pocket-tts-int8-2026-01-26/test_wavs/bria.wav"
     QUIZ_QUESTIONS = load_questions("./questions.json")
     current_q_id = 0
@@ -423,16 +437,12 @@ def main():
         while baymax_asks:
             # Ask the question once
             question = QUIZ_QUESTIONS[current_q_id]["question"]
-            baymax_say(question, reference_audio)
+            baymax_say(question, reference_audio, s)
             
-            buffer = np.array([], dtype = np.float32)
+            #buffer = np.array([], dtype = np.float32)
             time.sleep(0.5)  # Wait for audio to fully finish playing
             
-            if active_lang == "en":
-                recognizer = create_recognizer("en")
-            else:
-                recognizer = create_recognizer("ko")
-
+            recognizer = recognizer_en if active_lang == "en" else recognizer_ko
             print("Listening for answer...")
             answer_received = False
             
@@ -474,23 +484,22 @@ def main():
                             print(f"User: {reply}")
                             
                             if QUIZ_QUESTIONS[current_q_id]["answer"] in reply:
-                                baymax_say(f"That's correct! Moving on.", reference_audio)
+                                baymax_say(f"That's correct! Moving on.", reference_audio, s) if active_lang == "en" else baymax_say("맞습니다!", reference_audio, s)
                                 current_q_id += 1
                                 answer_received = True
-                                buffer = np.array([], dtype = np.float32)
+                                #buffer = np.array([], dtype = np.float32)
                                 time.sleep(0.2)
                             else:
-                                baymax_say(f"Incorrect! Here is a hint: {QUIZ_QUESTIONS[current_q_id]['hint']}", reference_audio)
-                                buffer = np.array([], dtype = np.float32)
+                                baymax_say(f"Incorrect! Here is a hint: {QUIZ_QUESTIONS[current_q_id]['hint']}", reference_audio, s) if active_lang == "en" else baymax_say(f"틀렸습니다! 힌트를 드리겠습니다: {QUIZ_QUESTIONS[current_q_id]['hint']}", reference_audio, s)
+                                #buffer = np.array([], dtype = np.float32)
                                 time.sleep(0.2)
-                                print("Listening for answer...")
             
+                buffer = np.array([], dtype = np.float32)
+
             if current_q_id >= len(QUIZ_QUESTIONS):
                 baymax_asks = False
             
 
-            
-
-
+        
 if __name__ == "__main__":
     main()
