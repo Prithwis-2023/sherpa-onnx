@@ -9,6 +9,7 @@ import re
 import gc  # for manual memory cleaning
 import json
 import os
+import argparse
 from functools import partial
 
 # global state for tts playback
@@ -22,13 +23,27 @@ tts_killed = False   # set to true once exited
 current_tts = None
 active_lang = None  # 'en' or 'ko'
 
-tts_en = None
-tts_ko = None
+tts = None
+
 is_speaking = False  # global flag to prevent Baymax from hearing its own echo
 baymax_asks = True
 
 first_byte_time = 0
 
+parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+parser.add_argument(
+    "--lang",
+    type = str,
+    default = "en",
+    help = "Language mode: either en or ko."
+)
+args = parser.parse_args()
+
+if args.lang == "en":
+    active_lang = "en"
+else:
+    active_lang = "ko"
 
 # configuration
 # wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
@@ -74,18 +89,18 @@ SUPERTONIC_TTS_JSON ="./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/tts.json"
 SUPERTONIC_UNICODE_INDEXER = "./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/unicode_indexer.bin"
 SUPERTONIC_VOICE_STYLE = "./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/voice.bin"
 
+#wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
+#tar xvf sherpa-onnx-whisper-tiny.tar.bz2
+#rm sherpa-onnx-whisper-tiny.tar.bz2
+WHISPER_ENCODER = "./sherpa-onnx-whisper-tiny/tiny-encoder.int8.onnx"
+WHISPER_DECODER = "./sherpa-onnx-whisper-tiny/tiny-decoder.int8.onnx"
+
 #wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2
 #tar xf vits-piper-en_US-amy-low.tar.bz2
 VITS_PIPER_MODEL = "./vits-piper-en_US-amy-low/en_US-amy-low.onnx"
 VITS_PIPER_LEXICON = ""
 VITS_PIPER_TOKENS = "./vits-piper-en_US-amy-low/tokens.txt"
 VITS_PIPER_DATA_DIR = "./vits-piper-en_US-amy-low/espeak-ng-data"
-
-#wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
-#tar xvf sherpa-onnx-whisper-tiny.tar.bz2
-#rm sherpa-onnx-whisper-tiny.tar.bz2
-WHISPER_ENCODER = "./sherpa-onnx-whisper-tiny/tiny-encoder.int8.onnx"
-WHISPER_DECODER = "./sherpa-onnx-whisper-tiny/tiny-decoder.int8.onnx"
 
 
 def resample_audio(samples, original_sr, target_sr = 24000):
@@ -263,7 +278,7 @@ def swap_tts_model(target_lang):
 def generated_audio_callback(samples: np.ndarray, progress: float, target_sr: int):
     """This function is called when new TTS audio is generated. We put the generated audio into a queue for playback.
     It also detects which model is generating the audio and resamples it on the fly to match the playback thread's 24 kHz requirement"""
-    global tts_started, first_byte_time, active_lang, tts_en, tts_ko
+    global tts_started, first_byte_time, active_lang, tts
     
     if not tts_started:
         first_byte_time = time.time()
@@ -273,7 +288,7 @@ def generated_audio_callback(samples: np.ndarray, progress: float, target_sr: in
     #if active_lang == "ko":
     #    samples = resample_audio(samples, 16000, 24000)
 
-    current_model = tts_ko if active_lang == "ko" else tts_en
+    current_model = tts
     model_sr = current_model.sample_rate
     #target_sr = 24000
 
@@ -332,15 +347,15 @@ def baymax_say(text, reference_audio, stream):
     """This function consists of the regex spoken language identification and tts component"""
     global active_lang, is_speaking, tts_queue, tts_event, tts_started, tts_stopped, tts_en, tts_ko
 
-    # identifying the spoken language
-    if bool(re.search('[가-힣]', text)):
-        lang = "ko"
-    elif bool(re.search('[A-Za-z]', text)):
-        lang = "en"
-    else:
-        lang = "en"  # default to English if no language detected
+    # # identifying the spoken language
+    # if bool(re.search('[가-힣]', text)):
+    #     lang = "ko"
+    # elif bool(re.search('[A-Za-z]', text)):
+    #     lang = "en"
+    # else:
+    #     lang = "en"  # default to English if no language detected
 
-    active_lang = lang
+    # active_lang = lang
 
     is_speaking = True  # set the speaker state
 
@@ -367,18 +382,21 @@ def baymax_say(text, reference_audio, stream):
                 gen_config.sid = 1   # female speaker
                 gen_config.num_steps = 12
                 gen_config.extra["lang"] = "ko"
-                ko_callback = partial(generated_audio_callback, target_sr = 24000)
-                tts_ko.generate(tts_text, gen_config, callback = ko_callback)
+                ko_callback = partial(generated_audio_callback, target_sr=24000)
+                tts.generate(tts_text, gen_config, callback = ko_callback)
             else:
-                gen_config.reference_audio = reference_audio # Required for Pocket-TTS
-                gen_config.reference_sample_rate = tts_en.sample_rate #reference_sample_rate
-                gen_config.num_steps = 5
-                en_callback = partial(generated_audio_callback, target_sr = 16000)  # for pocket-tts target sample rate is 24000
-                tts_en.generate(text, gen_config, callback = en_callback)
+                # gen_config.reference_audio = reference_audio # Required for Pocket-TTS
+                # gen_config.reference_sample_rate = tts.sample_rate #reference_sample_rate
+                # gen_config.num_steps = 5
+                gen_config.sid = 0
+                gen_config.speed = 1.0
+                gen_config.silence_scale = 0.2
+                en_callback = partial(generated_audio_callback, target_sr=16000)
+                tts.generate(text, gen_config, callback = en_callback)
             
             tts_stopped = True # signaling the callback that generation is done
         
-        threading.Thread(target = run_tts, args = (text, lang), daemon = True).start()
+        threading.Thread(target = run_tts, args = (text, active_lang), daemon = True).start()
         
         while not tts_started and not tts_stopped:
             time.sleep(0.01)
@@ -409,30 +427,40 @@ def load_questions(filepath):
 
 
 def main():
-    global tts_started, tts_stopped, tts_event, first_byte_time, active_lang, tts_en, tts_ko, is_speaking, baymax_asks
+    global tts_started, tts_stopped, tts_event, first_byte_time, active_lang, tts, is_speaking, baymax_asks
 
     print("Initializing Baymax Systems...")
 
     denoiser = create_speech_denoiser()
-    # slid = whisper_multilingual()
-    # tts = create_kokoro_tts()
-    # tts_en = create_pocket_tts()
-    tts_en = create_vits_tts()
-    tts_ko = create_supertonic_tts()
+    #slid = whisper_multilingual()
+    #tts = create_kokoro_tts()
 
-    recognizer_en = create_recognizer("en")
-    recognizer_ko = create_recognizer("ko")
+    if active_lang == "en":
+        recognizer = create_recognizer("en")
+        tts = create_vits_tts()
+        QUIZ_QUESTIONS = load_questions("./questions_en.json")
+    else:
+        recognizer = create_recognizer("ko")
+        tts = create_supertonic_tts()
+        QUIZ_QUESTIONS = load_questions("./questions_ko.json")
+
+    #tts_en = create_pocket_tts()
+    #tts_ko = create_supertonic_tts()
+
+    #recognizer_en = create_recognizer("en")
+    #recognizer_ko = create_recognizer("ko")
 
     reference_wav = "./sherpa-onnx-pocket-tts-int8-2026-01-26/test_wavs/bria.wav"
-    QUIZ_QUESTIONS = load_questions("./questions.json")
+    
+    #QUIZ_QUESTIONS = load_questions("./questions.json")
     current_q_id = 0
 
-    print(f"DEBUG: {tts_en.sample_rate}, {tts_ko.sample_rate}")
+    print(f"DEBUG: {tts.sample_rate}")
 
     print("Pre-loading reference voice...")
     reference_audio_raw, reference_sample_rate = sf.read(reference_wav)
-    if reference_sample_rate != tts_en.sample_rate:
-        reference_audio = resample_audio(reference_audio_raw, reference_sample_rate, tts_en.sample_rate)
+    if reference_sample_rate != tts.sample_rate:
+        reference_audio = resample_audio(reference_audio_raw, reference_sample_rate, tts.sample_rate)
     else:
         reference_audio = reference_audio_raw.astype(np.float32)
 
@@ -440,7 +468,8 @@ def main():
 
     # OPTIMIZATION: start the playback thread once and leave it open
     # this prevents the driver handshake delay every time bot speaks
-    play_back_thread = threading.Thread(target = play_audio, args = (tts_en.sample_rate, ), daemon = True)
+    play_back_thread = threading.Thread(target = play_audio, args = (tts.sample_rate, ), daemon = True)
+    #play_back_thread = threading.Thread(target = play_audio, args = (24000, ), daemon = True)
     play_back_thread.start()
     
     # VAD Setup
@@ -468,7 +497,7 @@ def main():
             #buffer = np.array([], dtype = np.float32)
             time.sleep(0.5)  # Wait for audio to fully finish playing
             
-            recognizer = recognizer_en if active_lang == "en" else recognizer_ko
+            # recognizer = recognizer_en if active_lang == "en" else recognizer_ko
             print("Listening for answer...")
             answer_received = False
             
