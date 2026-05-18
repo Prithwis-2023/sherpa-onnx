@@ -89,6 +89,13 @@ SUPERTONIC_TTS_JSON ="./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/tts.json"
 SUPERTONIC_UNICODE_INDEXER = "./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/unicode_indexer.bin"
 SUPERTONIC_VOICE_STYLE = "./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/voice.bin"
 
+#wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-mimic3-ko_KO-kss_low.tar.bz2
+#tar xf vits-mimic3-ko_KO-kss_low.tar.bz2
+#rm vits-mimic3-ko_KO-kss_low.tar.bz2
+COQUI_KO_MODEL = "./vits-mimic3-ko_KO-kss_low/ko_KO-kss_low.onnx"
+COQUI_KO_TOKENS = "./vits-mimic3-ko_KO-kss_low/tokens.txt"
+COQUI_KO_DATA_DIR = "./vits-mimic3-ko_KO-kss_low/espeak-ng-data"
+
 #wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
 #tar xvf sherpa-onnx-whisper-tiny.tar.bz2
 #rm sherpa-onnx-whisper-tiny.tar.bz2
@@ -224,6 +231,25 @@ def create_vits_tts():
                 data_dir = VITS_PIPER_DATA_DIR,
                 tokens = VITS_PIPER_TOKENS,
             ), 
+            provider = "cpu",
+            debug = False,
+            num_threads = 4,
+        ),
+        rule_fsts = "",
+        max_num_sentences = 1
+    )
+    return sherpa_onnx.OfflineTts(config)
+
+
+def create_coqui_vits_tts():
+    """Setup for Coqui TTS, for Korean text-to-speech"""
+    config = sherpa_onnx.OfflineTtsConfig(
+        model = sherpa_onnx.OfflineTtsModelConfig(
+            vits = sherpa_onnx.OfflineTtsVitsModelConfig(
+                model = COQUI_KO_MODEL,
+                data_dir = COQUI_KO_DATA_DIR,
+                tokens = COQUI_KO_TOKENS,
+            ),
             provider = "cpu",
             debug = False,
             num_threads = 4,
@@ -379,10 +405,10 @@ def baymax_say(text, reference_audio, stream):
             gen_config = sherpa_onnx.GenerationConfig()
             
             if target_lang == "ko":
-                gen_config.sid = 1   # female speaker
+                gen_config.sid = 0   # for supertonic female speaker its 1
                 gen_config.num_steps = 12
                 gen_config.extra["lang"] = "ko"
-                ko_callback = partial(generated_audio_callback, target_sr=24000)
+                ko_callback = partial(generated_audio_callback, target_sr=22050)  # for supertonic 24000
                 tts.generate(tts_text, gen_config, callback = ko_callback)
             else:
                 # gen_config.reference_audio = reference_audio # Required for Pocket-TTS
@@ -441,7 +467,8 @@ def main():
         QUIZ_QUESTIONS = load_questions("./questions_en.json")
     else:
         recognizer = create_recognizer("ko")
-        tts = create_supertonic_tts()
+        #tts = create_supertonic_tts()
+        tts = create_coqui_vits_tts()
         QUIZ_QUESTIONS = load_questions("./questions_ko.json")
 
     #tts_en = create_pocket_tts()

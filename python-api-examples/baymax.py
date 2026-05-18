@@ -82,6 +82,13 @@ VITS_PIPER_LEXICON = ""
 VITS_PIPER_TOKENS = "./vits-piper-en_US-amy-low/tokens.txt"
 VITS_PIPER_DATA_DIR = "./vits-piper-en_US-amy-low/espeak-ng-data"
 
+#wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-mimic3-ko_KO-kss_low.tar.bz2
+#tar xf vits-mimic3-ko_KO-kss_low.tar.bz2
+#rm vits-mimic3-ko_KO-kss_low.tar.bz2
+COQUI_KO_MODEL = "./vits-mimic3-ko_KO-kss_low/ko_KO-kss_low.onnx"
+COQUI_KO_TOKENS = "./vits-mimic3-ko_KO-kss_low/tokens.txt"
+COQUI_KO_DATA_DIR = "./vits-mimic3-ko_KO-kss_low/espeak-ng-data"
+
 #wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
 #tar xvf sherpa-onnx-whisper-tiny.tar.bz2
 #rm sherpa-onnx-whisper-tiny.tar.bz2
@@ -213,6 +220,25 @@ def create_vits_tts():
                 data_dir = VITS_PIPER_DATA_DIR,
                 tokens = VITS_PIPER_TOKENS,
             ), 
+            provider = "cpu",
+            debug = False,
+            num_threads = 4,
+        ),
+        rule_fsts = "",
+        max_num_sentences = 1
+    )
+    return sherpa_onnx.OfflineTts(config)
+
+
+def create_coqui_vits_tts():
+    """Setup for Coqui TTS, for Korean text-to-speech"""
+    config = sherpa_onnx.OfflineTtsConfig(
+        model = sherpa_onnx.OfflineTtsModelConfig(
+            vits = sherpa_onnx.OfflineTtsVitsModelConfig(
+                model = COQUI_KO_MODEL,
+                data_dir = COQUI_KO_DATA_DIR,
+                tokens = COQUI_KO_TOKENS,
+            ),
             provider = "cpu",
             debug = False,
             num_threads = 4,
@@ -377,7 +403,7 @@ def baymax_say(text, reference_audio, stream):
                 gen_config.reference_audio = reference_audio # Required for Pocket-TTS
                 gen_config.reference_sample_rate = tts_en.sample_rate #reference_sample_rate
                 gen_config.num_steps = 5
-                en_callback = partial(generated_audio_callback, target_sr = 16000)  # for pocket-tts target sample rate is 24000
+                en_callback = partial(generated_audio_callback, target_sr = 24000)  # for pocket-tts target sample rate is 24000, for vits_tts its 16000
                 tts_en.generate(text, gen_config, callback = en_callback)
             
             tts_stopped = True # signaling the callback that generation is done
@@ -420,9 +446,10 @@ def main():
     denoiser = create_speech_denoiser()
     # slid = whisper_multilingual()
     # tts = create_kokoro_tts()
-    # tts_en = create_pocket_tts()
-    tts_en = create_vits_tts()
+    tts_en = create_pocket_tts()
+    #tts_en = create_vits_tts()
     tts_ko = create_supertonic_tts()
+    #tts_ko = create_coqui_vits_tts()
 
     recognizer_en = create_recognizer("en")
     recognizer_ko = create_recognizer("ko")
