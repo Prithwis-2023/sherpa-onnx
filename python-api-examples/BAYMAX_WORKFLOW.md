@@ -6,7 +6,7 @@ This document describes the complete workflow of the Baymax speech interaction a
 
 ```mermaid
 graph TD
-    A["🚀 Initialization"] -->|Initialize Models| B["ASR Recognizer<br/>SenseVoice"]
+    A["Initialization"] -->|Initialize Models| B["ASR Recognizer<br/>SenseVoice"]
     A -->|Initialize Models| C["Speech Denoiser<br/>GTCRN"]
     A -->|Initialize Models| D["TTS Engines<br/>Pocket-TTS EN<br/>Supertonic-TTS KO"]
     
@@ -14,7 +14,7 @@ graph TD
     A -->|Setup Audio| F["Start Playback<br/>Thread<br/>24kHz"]
     A -->|Setup Audio| G["Setup VAD<br/>Voice Activity<br/>Detector"]
     
-    H["🎙️ Main Listen Loop"] -->|Read Samples| I["Microphone Input<br/>48kHz"]
+    H["Main Listen Loop"] -->|Read Samples| I["Microphone Input<br/>48kHz"]
     
     I -->|Resample| J["Audio Buffer<br/>16kHz"]
     

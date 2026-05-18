@@ -76,6 +76,7 @@ SUPERTONIC_VOICE_STYLE = "./sherpa-onnx-supertonic-3-tts-int8-2026-05-11/voice.b
 
 #wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2
 #tar xf vits-piper-en_US-amy-low.tar.bz2
+#rm vits-piper-en_US-amy-low.tar.bz2 
 VITS_PIPER_MODEL = "./vits-piper-en_US-amy-low/en_US-amy-low.onnx"
 VITS_PIPER_LEXICON = ""
 VITS_PIPER_TOKENS = "./vits-piper-en_US-amy-low/tokens.txt"
@@ -141,7 +142,7 @@ def create_speech_denoiser():
 
 
 def create_kokoro_tts():
-    """Setup for TTS. We are using Kokoro Multi-Lang model"""
+    """Setup for TTS using Kokoro Multi-Lang model"""
     config = sherpa_onnx.OfflineTtsConfig(
         model = sherpa_onnx.OfflineTtsModelConfig(
             kokoro = sherpa_onnx.OfflineTtsKokoroModelConfig(
@@ -162,6 +163,7 @@ def create_kokoro_tts():
 
 
 def create_pocket_tts():
+    """Setup for English TTS using Pocket-TTS model, supporting zero-shot voice cloning"""
     config = sherpa_onnx.OfflineTtsConfig(
         model = sherpa_onnx.OfflineTtsModelConfig(
             pocket = sherpa_onnx.OfflineTtsPocketModelConfig(
@@ -182,6 +184,7 @@ def create_pocket_tts():
 
 
 def create_supertonic_tts():
+    """Setup for Korean TTS using Supertonic TTS model"""
     config = sherpa_onnx.OfflineTtsConfig(
         model = sherpa_onnx.OfflineTtsModelConfig(
             supertonic = sherpa_onnx.OfflineTtsSupertonicModelConfig(
@@ -202,6 +205,7 @@ def create_supertonic_tts():
 
 
 def create_vits_tts():
+    """Setup for English TTS, based on lightweight VITS model"""
     config = sherpa_onnx.OfflineTtsConfig(
         model = sherpa_onnx.OfflineTtsModelConfig(
             vits = sherpa_onnx.OfflineTtsVitsModelConfig(
