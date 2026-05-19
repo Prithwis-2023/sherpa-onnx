@@ -29,8 +29,8 @@ flowchart LR
     Q --> OUT[OutputStream<br/>callback]
     OUT --> SPK([🔊 Speaker])
 
-    OUT -. tts_event .-> APP
-    APP -. stream.stop / start .-> READ
+    OUT -.->|tts_event| APP
+    APP -.->|mic pause / resume| READ
 
     classDef capture fill:#06b6d4,stroke:#0e7490,stroke-width:2px,color:#fff
     classDef process fill:#a855f7,stroke:#6b21a8,stroke-width:2px,color:#fff
