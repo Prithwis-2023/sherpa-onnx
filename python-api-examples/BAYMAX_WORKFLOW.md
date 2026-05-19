@@ -17,7 +17,7 @@ Both variants share the same end-to-end signal flow. The only thing that changes
 
 ```mermaid
 flowchart LR
-    MIC([🎤 Microphone<br/>48 kHz mono]) --> READ[InputStream<br/>100 ms reads]
+    MIC([Microphone<br/>48 kHz mono]) --> READ[InputStream<br/>100 ms reads]
     READ --> RS1[Linear-Interp<br/>Resampler<br/>48k → 16k]
     RS1 --> VAD[Silero VAD<br/>min_silence = 0.3 s<br/>buffer = 10 s]
     VAD -->|segment > 0.5 s| DEN[GTCRN<br/>Speech Denoiser]
@@ -27,7 +27,7 @@ flowchart LR
     TTS -.->|streaming chunks<br/>via callback| RS2[On-the-fly<br/>Resampler]
     RS2 --> Q[(FIFO<br/>tts_queue)]
     Q --> OUT[OutputStream<br/>callback]
-    OUT --> SPK([🔊 Speaker])
+    OUT --> SPK([Speaker])
 
     OUT -.->|tts_event| APP
     APP -.->|mic pause / resume| READ
@@ -67,7 +67,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    subgraph Main["⚙️ Main Thread"]
+    subgraph Main["Main Thread"]
         direction TB
         M1[Audio read loop] --> M2[VAD · Denoise · ASR]
         M2 --> M3[App logic]
@@ -76,14 +76,14 @@ flowchart TD
         M4 -->|waits on| EVT
     end
 
-    subgraph TTSThread["🎙️ TTS Worker — per-utterance daemon"]
+    subgraph TTSThread["TTS Worker — per-utterance daemon"]
         direction TB
         T1[tts.generate] -.->|streaming callback| CB[generated_audio_callback]
         CB -->|push samples| QUEUE
         T1 --> SETSTOPPED[tts_stopped = True]
     end
 
-    subgraph Playback["🔊 Playback Thread — persistent daemon"]
+    subgraph Playback["Playback Thread — persistent daemon"]
         direction TB
         QUEUE[(tts_queue)] --> PCB[play_audio_callback]
         PCB --> SPKR([Speaker])
@@ -120,10 +120,10 @@ Both TTS engines and both ASR recognizers are loaded into memory at boot. For ev
 
 ```mermaid
 flowchart TD
-    START([🚀 Boot]) --> LOAD[Load BOTH TTS models<br/>tts_en = Pocket-TTS<br/>tts_ko = Supertonic]
+    START([Boot]) --> LOAD[Load BOTH TTS models<br/>tts_en = Pocket-TTS<br/>tts_ko = Supertonic]
     LOAD --> LOADASR[Load BOTH ASR recognizers<br/>recognizer_en + recognizer_ko]
     LOADASR --> LOADREF[Pre-load reference WAV<br/>bria.wav → tts_en.sample_rate]
-    LOADREF --> READY([✅ Ready])
+    LOADREF --> READY([Ready])
 
     TEXT[Response text] --> RGX{Regex<br/>Language ID}
     RGX -->|"matches 가-힣"| KOPATH[active_lang = ko]
@@ -167,11 +167,11 @@ The target language is fixed at process start via a CLI flag. Exactly one TTS an
 
 ```mermaid
 flowchart TD
-    CLI([🚀 CLI<br/>--lang en or ko]) --> PARSE[argparse]
+    CLI([CLI<br/>--lang en or ko]) --> PARSE[argparse]
     PARSE --> BR{Branch<br/>at startup}
     BR -->|en| LOADEN[Load VITS-Piper Amy<br/>+ recognizer_en<br/>+ questions_en.json]
     BR -->|ko| LOADKO[Load Coqui Mimic3 KSS<br/>+ recognizer_ko<br/>+ questions_ko.json]
-    LOADEN --> READY([✅ Ready])
+    LOADEN --> READY([Ready])
     LOADKO --> READY
 
     TEXT[Response text] --> SINGLE[Single TTS engine<br/>no routing needed]
