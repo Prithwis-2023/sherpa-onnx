@@ -25,6 +25,7 @@
 #include "sherpa-onnx/csrc/offline-transducer-modified-beam-search-decoder.h"
 #include "sherpa-onnx/csrc/pad-sequence.h"
 #include "sherpa-onnx/csrc/symbol-table.h"
+#include "sherpa-onnx/csrc/text-utils.h"
 #include "sherpa-onnx/csrc/utils.h"
 #include "ssentencepiece/csrc/ssentencepiece.h"
 
@@ -58,6 +59,8 @@ static OfflineRecognitionResult Convert(
   if (sym_table.IsByteBpe()) {
     text = sym_table.DecodeByteBpe(text);
   }
+
+  text = RemoveSpaceBetweenCjk(text);
 
   r.text = std::move(text);
 
